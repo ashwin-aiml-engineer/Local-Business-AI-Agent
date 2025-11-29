@@ -1,0 +1,8 @@
+# Ignore the Database
+vector_db/
+
+# Ignore Python cache files
+_pycache_/
+
+# Ignore Environment variables (Safety)
+.env

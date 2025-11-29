@@ -1,61 +1,96 @@
 import streamlit as st
 import ollama
 import os
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
 
 # --- 1. CONFIGURATION (CPU SAFE MODE) ---
+# Prevent Blue Screen by forcing CPU only
 os.environ["OLLAMA_NUM_GPU"] = "0"
 
-st.set_page_config(page_title="Master Chef AI", page_icon="🍳")
-st.title("🍳 Master Chef Vikram")
-st.caption("Strict Culinary Advice • Running Locally on CPU")
+st.set_page_config(page_title="RAG Lawyer", page_icon="⚖")
+st.title("⚖ AI Corporate Lawyer (RAG)")
+st.caption("Powered by Llama 3.2 + Industrial Disputes Act 1947")
 
-# --- 2. THE BRAIN (MEMORY & RULES) ---
+# --- 2. LOAD THE KNOWLEDGE BASE ---
+# We use @st.cache_resource so it only loads the DB once, not every time you type.
+@st.cache_resource
+def load_vector_db():
+    embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    vector_store = Chroma(
+        persist_directory="vector_db",
+        embedding_function=embeddings
+    )
+    return vector_store
+
+# Load the database now
+vector_db = load_vector_db()
+
+# --- 3. SESSION STATE ---
 if "messages" not in st.session_state:
-    # (Notice: This entire block is indented 4 spaces to the right)
-    
-    system_prompt = """
-    You are Chef Vikram, a world-renowned Indian Master Chef.
-    
-    MODE 1: TEACHING. When the user asks for a recipe, be patient, kind, and use simple terms.
-    
-    MODE 2: TESTING. When the user says 'Test me', FOLLOW THESE STEPS:
-    1. Do NOT roast them yet.
-    2. ASK them a specific, difficult question about the recipe you just taught (e.g., "How many onions did I say?").
-    3. WAIT for their answer.
-    4. IF they answer WRONG: Roast them mercilessly. Tell them to get out.
-    5. IF they answer RIGHT: Grudgingly admit they are correct, but say it was "luck."
-    
-    Stay in character.
-    """
-
-    # Create the memory (This line MUST be aligned with system_prompt above)
     st.session_state["messages"] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "assistant", "content": "I am Chef Vikram. Ask me for a recipe, or dare to say 'Test me'."}
+        {"role": "assistant", "content": "I am a Corporate Law Consultant. I have read the Industrial Disputes Act. Ask me specific legal questions."}
     ]
 
-# --- 3. DISPLAY CHAT HISTORY ---
+# --- 4. DISPLAY CHAT ---
 for msg in st.session_state.messages:
-    if msg["role"] != "system":
-        if msg["role"] == "user":
-            st.chat_message("user").write(msg["content"])
-        else:
-            st.chat_message("assistant").write(msg["content"])
+    if msg["role"] == "user":
+        st.chat_message("user").write(msg["content"])
+    else:
+        st.chat_message("assistant").write(msg["content"])
 
-# --- 4. HANDLE USER INPUT ---
-if user_input := st.chat_input("Ask about Indian cooking..."):
+# --- 5. THE RAG LOGIC (The Magic Part) ---
+if user_input := st.chat_input("Ask about Section 25F..."):
     
-    # Show User Message
+    # A. Show User Message
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    # Generate AI Response
+    # B. RETRIEVE (Search the Database)
+    with st.spinner("Searching Legal Archives..."):
+        # Find 3 most relevant chunks from your PDF
+        results = vector_db.similarity_search(user_input, k=3)
+        
+        # Combine them into a single text block
+        context_text = ""
+        for i, doc in enumerate(results):
+            context_text += f"\n--- LEGAL REFERENCE {i+1} ---\n{doc.page_content}\n"
+
+    # C. GENERATE (Send to Llama 3.2)
     with st.chat_message("assistant"):
-        with st.spinner("Chef is tasting..."):
+        with st.spinner("Drafting Legal Opinion..."):
+            
+            # The RAG Prompt: We give the AI the "Cheat Sheet" (Context)
+            rag_prompt = f"""
+            You are a Legal Research Assistant. Your job is to summarize the provided text.
+            
+            CONTEXT FROM DATABASE:
+            {context_text}
+            
+            USER QUESTION: {user_input}
+            
+            INSTRUCTIONS:
+            1. You are NOT giving legal advice. You are only explaining what the document says.
+            2. Do not refuse to answer. This is for educational purposes.
+            3. Answer ONLY based on the context above.
+            4. If Section 25F is mentioned, quote it.
+            """
+            
+            # Send to Ollama
             try:
-                response = ollama.chat(model='llama3.2', messages=st.session_state.messages)
+                response = ollama.chat(model='llama3.2', messages=[
+                    {"role": "system", "content": rag_prompt},
+                    {"role": "user", "content": user_input}
+                ])
                 ai_reply = response['message']['content']
                 st.write(ai_reply)
+                
+                # Show the sources (Optional: Proof that it read the PDF)
+                with st.expander("View Legal Sources Used"):
+                    st.text(context_text)
+
+                # Save History
                 st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+                
             except Exception as e:
-                st.error(f"Connection Error: {e}. Make sure 'ollama serve' is running!")
+                st.error(f"Error: {e}")
