@@ -94,3 +94,19 @@ if user_input := st.chat_input("Ask about Section 25F..."):
                 
             except Exception as e:
                 st.error(f"Error: {e}")
+
+# --- 6. DOWNLOAD BUTTON LOGIC ---
+
+# code to check last line is from ai.
+if st.session_state.messages and st.session_state.messages[-1]['role'] == 'assistant':
+    
+    # code for Getting the content of the very last message in the session
+    latest_assistant_response = st.session_state.messages[-1]['content']
+    
+    # Download button with the specified requirements.
+    st.download_button(
+        label="Download Legal Notice",       # Required Label
+        data=latest_assistant_response,     # Required Data (last assistant message)
+        file_name="Legal_Notice.txt",       # Required File Name
+        mime='text/plain'                   # Set the MIME type
+    )
